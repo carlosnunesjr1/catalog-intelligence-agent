@@ -51,7 +51,9 @@ export async function generate(
       model: AI_MODEL,
       messages,
       temperature: opts?.temperature ?? 0.7,
-      max_tokens: opts?.maxTokens ?? 1024,
+      // IMPORTANTE: stepfun free corta em 'length' com max_tokens baixo e
+      // devolve content:null — manter padrão alto (2048+) para respostas longas.
+      max_tokens: opts?.maxTokens ?? 2048,
     };
 
     const res = await fetch(`${AI_ENDPOINT}/chat/completions`, {

@@ -160,7 +160,7 @@ export async function enrichProduct(
       task: 'Gere um anúncio otimizado para LOJA PRÓPRIA (não marketplace). Retorne: bullets (3-5, beneficiamentos com emoji), description_html (parágrafos <p> mobile-first), meta_title (max 60 chars), meta_description (max 160 chars), seo_keywords (5-8).',
     });
 
-    const ai = await generate(prompt, { system: sys, temperature: 0.5, maxTokens: 900 });
+    const ai = await generate(prompt, { system: sys, temperature: 0.5, maxTokens: 3000 });
     if (ai) {
       try {
         const parsed = JSON.parse(ai);
