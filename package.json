@@ -11,7 +11,8 @@
     "start": "node dist/server.js",
     "dev": "tsx src/server.ts",
     "http": "node dist/http.js",
-    "smoke": "node scripts/smoke-mcp.mjs"
+    "smoke": "node scripts/smoke-mcp.mjs",
+    "test": "node --import tsx --test tests/core.test.ts"
   },
   "keywords": [],
   "author": "",

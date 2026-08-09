@@ -10,25 +10,12 @@
  */
 
 import type { EanLookupResult, ImageCandidate } from '../../types.js';
+import { isValidEan } from '../lookup/ean.js';
 
 export interface SearchImagesOptions {
   ean?: string;
   title?: string;
   limit?: number;
-}
-
-/**
- * Valida dígito verificador EAN-13 (módulo 10).
- */
-function isValidEan(ean: string): boolean {
-  const clean = ean.replace(/\D/g, '');
-  if (clean.length !== 13) return false;
-  let sum = 0;
-  for (let i = 0; i < 12; i++) {
-    sum += parseInt(clean[i], 10) * (i % 2 === 0 ? 1 : 3);
-  }
-  const check = (10 - (sum % 10)) % 10;
-  return check === parseInt(clean[12], 10);
 }
 
 /**

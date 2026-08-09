@@ -1,50 +1,52 @@
 /**
- * Testes unitários do núcleo (sem rede): validação EAN, higienização, schema.
- * Roda com `node --test tests/`.
- * Cobertura do teste interno ANTES de verificar em clientes externos.
+ * Testes unitários do núcleo (sem rede): validação EAN, validate_listing, schema.
+ * Roda com: node --import tsx --test tests/core.test.ts
  */
 
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
+import { validateListing } from '../src/services/validate/listing.js';
+import { isValidEan } from '../src/services/lookup/ean.js';
 
-// Reimplementação mínima para testar o dígito verificador sem rede.
-function isValidEan(ean: string): boolean {
-  if (!/^\d{8}$|^\d{12}$|^\d{13}$|^\d{14}$/.test(ean)) return false;
-  const digits = ean.split('').map(Number);
-  const check = digits.pop()!;
-  const sum = digits.reduce((acc, d, i) => {
-    const weight = (digits.length - i) % 2 === 0 ? 3 : 1;
-    return acc + d * weight;
-  }, 0);
-  const calc = (10 - (sum % 10)) % 10;
-  return calc === check;
-}
+// EANs válidos conhecidos (GS1)
+const VALID_EAN13 = '5901234123457'; // exemplo clássico (Wikipedia)
+const VALID_EAN8 = '96385074'; // EAN-8 válido
 
-test('EAN-13 válido: 7891234567890', () => assert.equal(isValidEan('7891234567890'), true));
-test('EAN-13 inválido', () => assert.equal(isValidEAN('7891234567891'), false));
+test('EAN-13 válido 5901234123457', () => assert.equal(isValidEan(VALID_EAN13), true));
+test('EAN-13 inválido (check errado)', () => assert.equal(isValidEan('5901234123458'), false));
+test('EAN-8 válido 96385074', () => assert.equal(isValidEan(VALID_EAN8), true));
+test('EAN-8 inválido (check errado)', () => assert.equal(isValidEan('96385075'), false));
+test('EAN com caracteres não-dígito é normalizado', () => assert.equal(isValidEan('5901234123457 '), true));
+test('EAN em formato inválido (9 dígitos) rejeitado', () => assert.equal(isValidEan('123456789'), false));
 
-// Teste do schema JSON-LD gerado (função pura copiada do contrato)
-function buildSchemaOrg(title: string, brand: string, ean: string | null): Record<string, unknown> {
-  return {
-    '@context': 'https://schema.org',
-    '@type': 'Product',
-    name: title,
-    ...(ean ? { sku: ean, gtin13: ean } : {}),
-    brand: { '@type': 'Brand', name: brand || 'Marca' },
-  };
-}
-
-test('schema_org Gera Product JSON-LD com @type Product', () => {
-  const schema = buildSchemaOrg('Furadeira 750W', 'Tramontina', '7891234567890');
-  assert.equal(schema['@type'], 'Product');
-  assert.equal(schema.name, 'Furadeira 750W');
-  assert.equal((schema as any).gtin13, '7891234567890');
-});
-
-test('validate: título ausente gera error', () => {
-  // proxy para o validateListing (import ponte; sem rede)
-  const { validateListing } = require('../src/services/validate/listing.js');
+test('validate_listing: título/desc/marca ausentes → not ready', () => {
   const r = validateListing({ title: '', description_html: '', brand: '' });
   assert.equal(r.ready, false);
   assert.ok(r.issues.some((i) => i.severity === 'error'));
+});
+
+test('validate_listing: produto completo → ready', () => {
+  const r = validateListing({
+    title: 'Furadeira de Impacto 750W 110V — Profissional',
+    description_html: '<p>Furadeira de impacto com motor 750W, mandril 13mm e cabo auxiliar.</p>',
+    brand: 'Tramontina',
+    image_url: 'https://cdn.example.com/furadeira.jpg',
+    ean: VALID_EAN13,
+    schema_org: { '@type': 'Product', name: 'Furadeira' },
+    meta_title: 'Furadeira de Impacto 750W',
+    slug: 'furadeira-de-impacto-750w',
+  });
+  assert.equal(r.ready, true);
+  assert.ok(r.score >= 70, `score=${r.score}`);
+});
+
+test('schema_org de enricher: @type Product com gtin', async () => {
+  const { enrichProduct } = await import('../src/pipeline/enricher.js');
+  const p = await enrichProduct(
+    { ean: VALID_EAN13, title: 'FURADEIRA DE IMPACTO 750W 110V', brand: 'SEM MARCA' },
+    { with_ai: false, with_images: false }
+  );
+  assert.equal(p.schema_org['@type'], 'Product');
+  assert.ok(p.title.includes('Furadeira'), `title=${p.title}`);
+  assert.equal(p.slug, 'furadeira-de-impacto-750w-110v');
 });

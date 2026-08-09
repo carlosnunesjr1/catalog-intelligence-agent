@@ -9,21 +9,9 @@
  */
 
 import type { EanLookupResult } from '../../types.js';
+import { isValidEan } from './ean.js';
 
-/** Valida dígito verificador EAN-13 (módulo 10). */
-function isValidEan(ean: string): boolean {
-  const clean = ean.replace(/\D/g, '');
-  if (![8, 12, 13].includes(clean.length)) return clean.length === 13 ? false : false;
-  if (clean.length === 13) {
-    let sum = 0;
-    for (let i = 0; i < 12; i++) {
-      sum += parseInt(clean[i], 10) * (i % 2 === 0 ? 1 : 3);
-    }
-    const check = (10 - (sum % 10)) % 10;
-    return check === parseInt(clean[12], 10);
-  }
-  return true; // 8/12 sem validação estrita
-}
+/** Valida dígito verificador EAN (módulo 10) — delegado a ean.ts */
 
 /**
  * Faz lookup de um EAN. Tenta Open Food Facts primeiro.

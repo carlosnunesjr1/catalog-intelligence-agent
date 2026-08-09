@@ -35,6 +35,8 @@ npm install
 npm run build        # tsc → dist/
 npm run dev          # modo dev (tsx watch) — MCP server stdio
 npm start            # node dist/server.js — MCP server stdio
+npm test             # testes unitários (9): EAN, validate, schema
+npm run smoke        # smoke end-to-end do protocolo MCP (6 checks, stdio)
 ```
 
 ### Conectar em um cliente MCP
