@@ -1,0 +1,195 @@
+/**
+ * Catalog Intelligence Agent — MCP server.
+ * Enriquecimento autônomo de catálogo para STOREFRONTS (lojas próprias).
+ * Trilha: Catalog & Content — Hackathon Deco Agents for Commerce.
+ *
+ * Transportes: stdio (dev/local) + Streamable HTTP (deco Studio).
+ * Usa a API high-level `McpServer` do @modelcontextprotocol/sdk (v1.30).
+ */
+
+import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
+import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js';
+import { z } from 'zod';
+
+import { lookupEan } from './services/lookup/cascade.js';
+import { searchImages } from './services/images/search.js';
+import { enrichProduct } from './pipeline/enricher.js';
+import { validateListing } from './services/validate/listing.js';
+import { enrichBatch } from './pipeline/batch.js';
+
+export function makeServer(): McpServer {
+  const server = new McpServer({
+    name: 'catalog-intelligence-agent',
+    version: '0.1.0',
+    description:
+      'Agente de enriquecimento de catálogo para storefronts: recebe dados brutos de ERP ' +
+      '(EAN, título sujo, marca genérica) e devolve produto pronto para publicar na loja própria ' +
+      '(título SEO, bullets, descrição HTML, schema.org JSON-LD, imagem). Ferramentas: ' +
+      'lookup_ean, search_images, enrich_product, validate_listing, enrich_batch.',
+  });
+
+  // ── Tool 1: lookup_ean ────────────────────────────────────────────
+  server.tool(
+    'lookup_ean',
+    'Busca dados de referência de um produto pelo código EAN/GTIN em múltiplas fontes ' +
+      '(Open Food Facts, EAN-Search). Valida o dígito verificador antes da requisição. ' +
+      'Retorna título, marca, descrição, imagem e dimensões quando encontrados.',
+    { ean: z.string().describe('Código EAN/GTIN de 8, 12, 13 ou 14 dígitos') },
+    async ({ ean }) => {
+      try {
+        const result = await lookupEan(ean);
+        return { content: [{ type: 'text', text: JSON.stringify(result, null, 2) }] };
+      } catch (err) {
+        return {
+          content: [{ type: 'text', text: `Erro no lookup: ${(err as Error).message}` }],
+          isError: true,
+        };
+      }
+    }
+  );
+
+  // ── Tool 2: search_images ─────────────────────────────────────────
+  server.tool(
+    'search_images',
+    'Busca imagens candidatas de um produto por EAN/GTIN. Retorna até N URLs de imagem ' +
+      'com fonte e score. Usa Open Food Facts (sem key) e URLs já informadas no ERP.',
+    {
+      ean: z.string().optional().describe('EAN/GTIN do produto'),
+      title: z.string().optional().describe('Título do produto (reservado)'),
+      limit: z.number().int().min(1).max(10).default(3).describe('Quantidade máxima de imagens'),
+    },
+    async ({ ean, limit }) => {
+      try {
+        const images = await searchImages({ ean, limit: limit ?? 3 });
+        return { content: [{ type: 'text', text: JSON.stringify({ images }, null, 2) }] };
+      } catch (err) {
+        return {
+          content: [{ type: 'text', text: `Erro na busca de imagens: ${(err as Error).message}` }],
+          isError: true,
+        };
+      }
+    }
+  );
+
+  // ── Tool 3: enrich_product ────────────────────────────────────────
+  server.tool(
+    'enrich_product',
+    'Pipeline completo de enriquecimento: higieniza título (Title Case, remove ruído), gera ' +
+      'bullets de benefícios, descrição HTML mobile-first, SEO (slug/meta/keywords), schema.org ' +
+      'JSON-LD, busca imagem por EAN e normaliza atributos. Entrada = produto bruto de ERP; ' +
+      'saída = produto pronto para a loja própria (storefront).',
+    {
+      product: z.object({
+        ean: z.string().optional().nullable(),
+        title: z.string().optional().nullable(),
+        brand: z.string().optional().nullable(),
+        description: z.string().optional().nullable(),
+        image_urls: z.array(z.string()).optional(),
+        attributes: z.record(z.string(), z.unknown()).optional(),
+      }),
+      options: z
+        .object({
+          with_images: z.boolean().default(true),
+          with_ai: z.boolean().default(true),
+          locale: z.string().default('pt-BR'),
+        })
+        .optional(),
+    },
+    async ({ product, options }) => {
+      try {
+        const enriched = await enrichProduct(product as never, options);
+        return { content: [{ type: 'text', text: JSON.stringify(enriched, null, 2) }] };
+      } catch (err) {
+        return {
+          content: [{ type: 'text', text: `Erro no enriquecimento: ${(err as Error).message}` }],
+          isError: true,
+        };
+      }
+    }
+  );
+
+  // ── Tool 4: validate_listing ──────────────────────────────────────
+  server.tool(
+    'validate_listing',
+    'Valida a completeza de um produto/listing para publicação em storefront: título, descrição, ' +
+      'imagem, atributos obrigatórios, schema.org JSON-LD e SEO on-page. Retorna score 0-100, ' +
+      'lista de issues (error/warning) e pronto-para-publicar (score >= 70).',
+    {
+      listing: z.record(z.string(), z.unknown()).describe('Objeto do produto/listing a validar'),
+      rules: z
+        .object({
+          require_schema_org: z.boolean().default(true),
+          require_image: z.boolean().default(true),
+        })
+        .optional(),
+    },
+    async ({ listing, rules }) => {
+      try {
+        const result = validateListing(listing, rules);
+        return { content: [{ type: 'text', text: JSON.stringify(result, null, 2) }] };
+      } catch (err) {
+        return {
+          content: [{ type: 'text', text: `Erro na validação: ${(err as Error).message}` }],
+          isError: true,
+        };
+      }
+    }
+  );
+
+  // ── Tool 5: enrich_batch ──────────────────────────────────────────
+  server.tool(
+    'enrich_batch',
+    'Orquestrador de lote: aplica o pipeline de enriquecimento a uma lista de produtos brutos, ' +
+      'um a um, e devolve relatório consolidado (produtos enriquecidos, falhas, warnings) pronto ' +
+      'para importação na storefront.',
+    {
+      products: z
+        .array(
+          z.object({
+            ean: z.string().optional().nullable(),
+            title: z.string().optional().nullable(),
+            brand: z.string().optional().nullable(),
+            description: z.string().optional().nullable(),
+            image_urls: z.array(z.string()).optional(),
+            attributes: z.record(z.string(), z.unknown()).optional(),
+                        })
+                      )
+                      .min(1)
+                      .max(50),
+      options: z
+        .object({
+          with_images: z.boolean().default(true),
+          with_ai: z.boolean().default(true),
+          locale: z.string().default('pt-BR'),
+        })
+        .optional(),
+    },
+    async ({ products, options }) => {
+      try {
+        const report = await enrichBatch(products as never, options);
+        return { content: [{ type: 'text', text: JSON.stringify(report, null, 2) }] };
+      } catch (err) {
+        return {
+          content: [{ type: 'text', text: `Erro no lote: ${(err as Error).message}` }],
+          isError: true,
+        };
+      }
+    }
+  );
+
+  return server;
+}
+
+// ── Transporte stdio (dev) ──────────────────────────────────────────
+async function main() {
+  const server = makeServer();
+  const transport = new StdioServerTransport();
+  await server.connect(transport);
+  process.stderr.write('[catalog-intelligence-agent] MCP server (stdio) pronto\n');
+}
+
+main().catch((err) => {
+  process.stderr.write(`[catalog-intelligence-agent] Fatal: ${err.stack || err}\n`);
+  process.exit(1);
+});
+

@@ -1,0 +1,30 @@
+{
+  "name": "catalog-intelligence-agent",
+  "version": "0.1.0",
+  "description": "MCP server de enriquecimento de catalogo para storefronts (Deco Studio)",
+  "main": "index.js",
+  "directories": {
+    "test": "tests"
+  },
+  "scripts": {
+    "build": "tsc",
+    "start": "node dist/server.js",
+    "dev": "tsx src/server.ts",
+    "http": "node dist/http.js",
+    "smoke": "node scripts/smoke-mcp.mjs"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "type": "module",
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "^1.30.0",
+    "@types/node": "^26.2.0",
+    "tsx": "^4.23.11",
+    "typescript": "^7.0.2",
+    "zod": "^4.4.3"
+  },
+  "devDependencies": {
+    "@types/express": "^5.0.6"
+  }
+}

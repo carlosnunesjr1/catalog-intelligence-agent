@@ -1,0 +1,12 @@
+{
+  "mcpServers": {
+    "catalog-intelligence": {
+      "command": "node",
+      "args": ["/root/catalog-intelligence-agent/dist/server.js"],
+      "env": {
+        "AI_ENDPOINT": "https://inference-api.nousresearch.com/v1",
+        "AI_MODEL": "deepseek-v4-flash"
+      }
+    }
+  }
+}
