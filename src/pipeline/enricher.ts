@@ -165,7 +165,17 @@ export async function enrichProduct(
     const ai = await generate(prompt, { system: sys, temperature: 0.5, maxTokens: 3000 });
     if (ai) {
       try {
-        const parsed = JSON.parse(ai);
+        // Extrai JSON de resposta com fences markdown ```json ... ``` (modelos free o fazem)
+        let jsonText = ai.trim();
+        const fence = jsonText.match(/```(?:json)?\s*([\s\S]*?)```/);
+        if (fence) jsonText = fence[1].trim();
+        // fallback: pega o primeiro {...} balanceado
+        if (!jsonText.startsWith('{')) {
+          const start = jsonText.indexOf('{');
+          const end = jsonText.lastIndexOf('}');
+          if (start !== -1 && end > start) jsonText = jsonText.slice(start, end + 1);
+        }
+        const parsed = JSON.parse(jsonText);
         const clean = sanitizeAiOutput(parsed);
         if (Array.isArray(clean.bullets)) bullets = clean.bullets.slice(0, 5);
         if (typeof clean.description_html === 'string') descriptionHtml = clean.description_html;

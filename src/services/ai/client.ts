@@ -16,6 +16,9 @@ const AI_API_KEY = process.env.AI_API_KEY;
 
 const TIMEOUT_MS = 30_000;
 
+// Cache de respostas (economia de tokens): mesma chave → mesmo resultado, custo 0
+import { getCached, putCached, cacheKey } from './cache.js';
+
 export interface GenerateOptions {
   system?: string;
   temperature?: number;
@@ -41,6 +44,14 @@ export async function generate(
   const timeoutId = setTimeout(() => controller.abort(), TIMEOUT_MS);
 
   try {
+    // 1. Cache hit? (mesmo prompt+modelo → resposta igual, sem gastar tokens)
+    const key = cacheKey(opts?.system, prompt, AI_MODEL);
+    const cached = await getCached(key);
+    if (cached) {
+      process.stderr.write('[ai/client] cache HIT — resposta servida sem chamada de IA\n');
+      return cached;
+    }
+
     const messages: Array<{ role: 'system' | 'user'; content: string }> = [];
     if (opts?.system) {
       messages.push({ role: 'system', content: opts.system });
@@ -78,7 +89,12 @@ export async function generate(
     };
 
     const content = data.choices?.[0]?.message?.content;
-    return typeof content === 'string' ? content : null;
+    if (typeof content === 'string') {
+      // 2. Guarda no cache (best-effort)
+      void putCached(key, content);
+      return content;
+    }
+    return null;
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err);
     process.stderr.write(`[ai/client] Erro: ${msg} — fallback determinístico\n`);

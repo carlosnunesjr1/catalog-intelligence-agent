@@ -7,6 +7,12 @@
  */
 
 import { isValidEan } from '../lookup/ean.js';
+import { promises as fs } from 'node:fs';
+import os from 'node:os';
+import path from 'node:path';
+
+const SCRAPE_CACHE = path.join(os.tmpdir(), 'catalog-agent-scrape-cache.json');
+const SCRAPE_TTL_MS = 6 * 60 * 60 * 1000;
 
 export interface ScrapedProduct {
   url: string;
@@ -121,11 +127,57 @@ function extractPrice(html: string, schema: Record<string, unknown> | null): { p
   return {};
 }
 
+async function scrapeCacheGet(url: string): Promise<ScrapedProduct | null> {
+  try {
+    const raw = await fs.readFile(SCRAPE_CACHE, 'utf-8');
+    const obj = JSON.parse(raw) as Record<string, { v: ScrapedProduct; ts: number }>;
+    const e = obj[url];
+    if (e && Date.now() - e.ts < SCRAPE_TTL_MS) return e.v;
+  } catch {
+    /* sem cache */
+  }
+  return null;
+}
+
+async function scrapeCachePut(url: string, result: ScrapedProduct): Promise<void> {
+  try {
+    let obj: Record<string, { v: ScrapedProduct; ts: number }> = {};
+    try {
+      obj = JSON.parse(await fs.readFile(SCRAPE_CACHE, 'utf-8'));
+    } catch {
+      obj = {};
+    }
+    obj[url] = { v: result, ts: Date.now() };
+    // limita tamanho (100 entradas)
+    const keys = Object.keys(obj);
+    if (keys.length > 100) {
+      for (const k of keys.slice(0, keys.length - 100)) delete obj[k];
+    }
+    const tmp = `${SCRAPE_CACHE}.${process.pid}.tmp`;
+    await fs.writeFile(tmp, JSON.stringify(obj), 'utf-8');
+    await fs.rename(tmp, SCRAPE_CACHE);
+  } catch {
+    /* best-effort */
+  }
+}
+
 /**
  * Faz a raspagem de uma URL de produto.
  * Timeout 12s, máximo 2MB. Em falha: { found: false, error }.
+ * Usa cache por URL (TTL 6h): mesma página não é raspada duas vezes.
  */
 export async function scrapeProductUrl(url: string): Promise<ScrapedProduct> {
+  const cached = await scrapeCacheGet(url);
+  if (cached) {
+    process.stderr.write('[scrape] cache HIT — página servida sem raspagem\n');
+    return cached;
+  }
+  const result = await scrapeProductUrlUncached(url);
+  if (result.found) void scrapeCachePut(url, result);
+  return result;
+}
+
+async function scrapeProductUrlUncached(url: string): Promise<ScrapedProduct> {
   const base: ScrapedProduct = {
     url,
     title: '',
