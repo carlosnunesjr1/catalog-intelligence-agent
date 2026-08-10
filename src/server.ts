@@ -19,6 +19,7 @@ import { enrichBatch } from './pipeline/batch.js';
 import { scrapeProductUrl } from './services/scrape/product.js';
 import { analyzeImageUrl } from './services/images/analyze.js';
 import { downloadImages } from './services/images/download.js';
+import { ocrImageUrl, ocrImageBuffer } from './services/images/ocr.js';
 import { checkInjection, sanitizeAiOutput } from './utils/guardrails.js';
 
 export function makeServer(): McpServer {
@@ -364,6 +365,28 @@ export function makeServer(): McpServer {
       } catch (err) {
         return {
           content: [{ type: 'text', text: `Erro ao preparar payload Shopify: ${(err as Error).message}` }],
+          isError: true,
+        };
+      }
+    }
+  );
+
+  // ── Tool 10: ocr_image ────────────────────────────────────────────
+  server.tool(
+    'ocr_image',
+    'Extrai texto de um PRINT/foto da página de produto (tesseract OCR, pt-BR). ' +
+      'Ideal quando o lojista manda um print da loja própria ou do concorrente em vez de link: ' +
+      'o agente lê o título, preço e marca direto da imagem.',
+    {
+      image_url: z.string().describe('URL da imagem (print/foto) para OCR'),
+    },
+    async ({ image_url }) => {
+      try {
+        const result = await ocrImageUrl(image_url);
+        return { content: [{ type: 'text', text: JSON.stringify(result, null, 2) }] };
+      } catch (err) {
+        return {
+          content: [{ type: 'text', text: `Erro no OCR: ${(err as Error).message}` }],
           isError: true,
         };
       }
