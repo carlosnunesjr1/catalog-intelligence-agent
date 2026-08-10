@@ -9,6 +9,7 @@ import type { EnrichedProduct, EnrichOptions, RawProduct } from '../types.js';
 import { generate } from '../services/ai/client.js';
 import { searchImages } from '../services/images/search.js';
 import { DEFAULT_LOCALE } from '../types.js';
+import { sanitizeAiOutput } from '../utils/guardrails.js';
 
 /** Palavras que ficam minúsculas em Title Case (pt-BR) */
 const SMALL_WORDS = new Set(['de', 'da', 'do', 'das', 'dos', 'e', 'com', 'para', 'em']);
@@ -164,11 +165,12 @@ export async function enrichProduct(
     if (ai) {
       try {
         const parsed = JSON.parse(ai);
-        if (Array.isArray(parsed.bullets)) bullets = parsed.bullets.slice(0, 5);
-        if (typeof parsed.description_html === 'string') descriptionHtml = parsed.description_html;
-        if (typeof parsed.meta_title === 'string') metaTitle = parsed.meta_title.slice(0, 60);
-        if (typeof parsed.meta_description === 'string') metaDescription = parsed.meta_description.slice(0, 160);
-        if (Array.isArray(parsed.seo_keywords)) seo = parsed.seo_keywords.slice(0, 8);
+        const clean = sanitizeAiOutput(parsed);
+        if (Array.isArray(clean.bullets)) bullets = clean.bullets.slice(0, 5);
+        if (typeof clean.description_html === 'string') descriptionHtml = clean.description_html;
+        if (typeof clean.meta_title === 'string') metaTitle = clean.meta_title.slice(0, 60);
+        if (typeof clean.meta_description === 'string') metaDescription = clean.meta_description.slice(0, 160);
+        if (Array.isArray(clean.seo_keywords)) seo = clean.seo_keywords.slice(0, 8);
       } catch (err) {
         warnings.push('IA retornou JSON inválido — fallback determinístico');
         process.stderr.write(`[enricher] JSON parse falhou: ${(err as Error).message}\n`);
@@ -189,15 +191,36 @@ export async function enrichProduct(
 
   // ── Imagem (opcional) ──────────────────────────────────────────────
   let imageUrl: string | null = null;
+  let imageProcessed = false;
+  let imageAnalysis: Record<string, unknown> | null = null;
   if (withImages) {
     const own = product.image_urls?.find((u) => /^https?:\/\//.test(u));
-    if (own) {
-      imageUrl = own;
+    const candidate = own ?? (ean ? (await searchImages({ ean, title: cleanTitle, limit: 1 }))[0]?.url ?? null : null);
+    if (candidate) {
+      // Analisa primeiro (diagnóstico visual), depois processa fundo branco
+      try {
+        const { analyzeImageUrl } = await import('../services/images/analyze.js');
+        const analysis = await analyzeImageUrl(candidate);
+        if (analysis && !analysis.error) {
+          imageAnalysis = analysis as unknown as Record<string, unknown>;
+          if (analysis.issues?.length) warnings.push(`Imagem: ${analysis.issues.join('; ')}`);
+        }
+      } catch {
+        /* análise não é bloqueio */
+      }
+      try {
+        const { processImage } = await import('../services/images/process.js');
+        const { processed } = await processImage(candidate);
+        imageUrl = processed.url;
+        imageProcessed = processed.background_removed;
+        if (processed.warning) warnings.push(`Imagem: ${processed.warning}`);
+        if (processed.background_removed) warnings.push('Fundo da imagem removido → fundo branco (compliance storefront)');
+      } catch {
+        imageUrl = candidate; // fallback: URL original
+      }
     } else {
-      const candidates = await searchImages({ ean: ean ?? undefined, title: cleanTitle, limit: 1 });
-      imageUrl = candidates[0]?.url ?? null;
+      warnings.push('Imagem não encontrada — adicionar manualmente antes de publicar');
     }
-    if (!imageUrl) warnings.push('Imagem não encontrada — adicionar manualmente antes de publicar');
   }
 
   const slug = slugify(title);
@@ -221,5 +244,7 @@ export async function enrichProduct(
     attributes,
     source_ean: ean,
     warnings,
+    image_processed: imageProcessed,
+    image_analysis: imageAnalysis,
   };
 }

@@ -16,6 +16,9 @@ import { searchImages } from './services/images/search.js';
 import { enrichProduct } from './pipeline/enricher.js';
 import { validateListing } from './services/validate/listing.js';
 import { enrichBatch } from './pipeline/batch.js';
+import { scrapeProductUrl } from './services/scrape/product.js';
+import { analyzeImageUrl } from './services/images/analyze.js';
+import { checkInjection, sanitizeAiOutput } from './utils/guardrails.js';
 
 export function makeServer(): McpServer {
   const server = new McpServer({
@@ -37,6 +40,13 @@ export function makeServer(): McpServer {
     { ean: z.string().describe('Código EAN/GTIN de 8, 12, 13 ou 14 dígitos') },
     async ({ ean }) => {
       try {
+        const injection = checkInjection(ean);
+        if (injection.detected) {
+          return {
+            content: [{ type: 'text', text: JSON.stringify({ error: 'Entrada rejeitada por segurança (padrão de injeção detectado)', matched: injection.matched }) }],
+            isError: true,
+          };
+        }
         const result = await lookupEan(ean);
         return { content: [{ type: 'text', text: JSON.stringify(result, null, 2) }] };
       } catch (err) {
@@ -171,6 +181,56 @@ export function makeServer(): McpServer {
       } catch (err) {
         return {
           content: [{ type: 'text', text: `Erro no lote: ${(err as Error).message}` }],
+          isError: true,
+        };
+      }
+    }
+  );
+
+  // ── Tool 6: analyze_url ───────────────────────────────────────────
+  server.tool(
+    'analyze_url',
+    'Raspa e diagnostica a página de um produto na loja própria do cliente (storefront). ' +
+      'Extrai título, preço, descrição, imagem, marca, schema.org e EAN; retorna um diagnóstico ' +
+      'de prontidão por seção. Ideal para: o lojista cola o link do produto e o agente audita.',
+    {
+      url: z.string().url().describe('URL do produto na loja (http/https)'),
+    },
+    async ({ url }) => {
+      try {
+        const injection = checkInjection(url);
+        if (injection.detected) {
+          return {
+            content: [{ type: 'text', text: JSON.stringify({ error: 'Entrada rejeitada por segurança', matched: injection.matched }) }],
+            isError: true,
+          };
+        }
+        const scraped = await scrapeProductUrl(url);
+        return { content: [{ type: 'text', text: JSON.stringify(scraped, null, 2) }] };
+      } catch (err) {
+        return {
+          content: [{ type: 'text', text: `Erro ao analisar URL: ${(err as Error).message}` }],
+          isError: true,
+        };
+      }
+    }
+  );
+
+  // ── Tool 7: analyze_image ─────────────────────────────────────────
+  server.tool(
+    'analyze_image',
+    'Analisa a imagem de um produto (por URL): resolução, proporção, fundo (uniforme/ruidoso), ' +
+      'nitidez e prontidão para a loja. Sugere rembg (fundo branco) quando o fundo não é uniforme.',
+    {
+      image_url: z.string().describe('URL da imagem do produto (http/https)'),
+    },
+    async ({ image_url }) => {
+      try {
+        const analysis = await analyzeImageUrl(image_url);
+        return { content: [{ type: 'text', text: JSON.stringify(analysis, null, 2) }] };
+      } catch (err) {
+        return {
+          content: [{ type: 'text', text: `Erro ao analisar imagem: ${(err as Error).message}` }],
           isError: true,
         };
       }

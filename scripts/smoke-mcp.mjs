@@ -69,12 +69,30 @@ try {
   check('initialize', init.serverInfo?.name === 'catalog-intelligence-agent',
     `server=${init.serverInfo?.name} proto=${init.protocolVersion}`);
 
-  // 2. tools/list — 5 ferramentas
+  // 2. tools/list — 7 ferramentas
   const tools = await rpc('tools/list');
   const names = (tools.tools ?? []).map((t) => t.name);
-  const expected = ['lookup_ean', 'search_images', 'enrich_product', 'validate_listing', 'enrich_batch'];
-  check('tools/list 5 tools', expected.every((n) => names.includes(n)),
+  const expected = ['lookup_ean', 'search_images', 'enrich_product', 'validate_listing', 'enrich_batch', 'analyze_url', 'analyze_image'];
+  check('tools/list 7 tools', expected.every((n) => names.includes(n)),
     `${names.length} tools: ${names.join(', ')}`);
+
+  // 2b. analyze_url com URL inválida (sem rede, segurança)
+  const au = await rpc('tools/call', {
+    name: 'analyze_url',
+    arguments: { url: 'https://exemplo.invalid/produto' },
+  });
+  const auTxt = au.content?.map((c) => c.text).join('');
+  check('analyze_url malicioso/erro tratado', typeof auTxt === 'string' && (au.error || au.isError || /Erro|HTTP|timeout/i.test(auTxt || '')),
+    `isError=${!!au.isError} texto=${auTxt?.slice(0, 80)}`);
+
+  // 2c. analyze_image com URL inválida (segurança)
+  const ai = await rpc('tools/call', {
+    name: 'analyze_image',
+    arguments: { image_url: 'ftp://exemplo.com/x.jpg' },
+  });
+  const aiTxt = ai.content?.map((c) => c.text).join('');
+  check('analyze_image URL insegura', typeof aiTxt === 'string' && /URL/i.test(aiTxt || ''),
+    aiTxt?.slice(0, 100));
 
   // 3. lookup_ean EAN inválido (sem rede, valida dígito)
   const lk = await rpc('tools/call', {

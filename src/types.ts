@@ -59,6 +59,10 @@ export interface EnrichedProduct {
   attributes: Record<string, string | number | null>;
   source_ean?: string | null;
   warnings: string[];
+  /** true se a imagem passou por rembg (fundo branco) */
+  image_processed?: boolean;
+  /** análise determinística da imagem (resolução, fundo, nitidez) */
+  image_analysis?: Record<string, unknown> | null;
 }
 
 /** Resultado da validação de completeza p/ loja própria */
