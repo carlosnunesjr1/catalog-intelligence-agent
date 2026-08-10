@@ -35,6 +35,107 @@ export interface ScrapedProduct {
 const UA =
   'Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0 Safari/537.36';
 
+/** Pool de User-Agents realistas (rotação evita 403 por UA genérico — prática 2026). */
+const UA_POOL = [
+  'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/125.0.0.0 Safari/537.36',
+  'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.5 Safari/605.1.15',
+  'Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:127.0) Gecko/20100101 Firefox/127.0',
+  'Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0 Safari/537.36',
+  'Mozilla/5.0 (iPhone; CPU iPhone OS 17_5 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.5 Mobile/15E148 Safari/604.1',
+];
+
+/**
+ * Retorna um User-Agent rotativo estável por URL (mesma URL → mesmo UA no cache),
+ * garantindo consistência e evitando troca a cada request da mesma página.
+ */
+function pickUserAgent(url: string): string {
+  let h = 0;
+  for (let i = 0; i < url.length; i++) h = (h * 31 + url.charCodeAt(i)) | 0;
+  return UA_POOL[Math.abs(h) % UA_POOL.length];
+}
+
+/** Headers completos de browser (realistas — principais causas de 403: headers faltando). */
+function browserHeaders(url: string): Record<string, string> {
+  return {
+    'User-Agent': pickUserAgent(url),
+    Accept: 'text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,*/*;q=0.8',
+    'Accept-Language': 'pt-BR,pt;q=0.9,en-US;q=0.8,en;q=0.7',
+    'Accept-Encoding': 'gzip, deflate, br',
+    'Cache-Control': 'no-cache',
+    Pragma: 'no-cache',
+    'Sec-Ch-Ua': '"Not_A Brand";v="8", "Chromium";v="126", "Google Chrome";v="126"',
+    'Sec-Ch-Ua-Mobile': '?0',
+    'Sec-Ch-Ua-Platform': '"Linux"',
+    'Upgrade-Insecure-Requests': '1',
+    Referer: new URL(url).origin + '/',
+  };
+}
+
+/** Delay aleatório leve (300–900ms) — evita padrão de bot visível. */
+function randomDelay(msMin = 300, msMax = 900): Promise<void> {
+  const ms = msMin + Math.random() * (msMax - msMin);
+  return new Promise((r) => setTimeout(r, ms));
+}
+
+/** Faz uma requisição GET com retry (2 tentativas extras) + fallback Wayback Machine p/ 403/429/5xx. */
+async function fetchWithRetry(url: string): Promise<string> {
+  const attempts = [
+    { headers: browserHeaders(url), label: 'direto' },
+    { headers: browserHeaders(url), label: 'direto (retry)' },
+    { headers: browserHeaders(url), label: 'wayback' },
+  ];
+
+  for (let i = 0; i < attempts.length; i++) {
+    try {
+      let target = url;
+      let hdrs = attempts[i].headers;
+      if (attempts[i].label === 'wayback') {
+        // Fallback: arquivo público do Wayback Machine (prática robusta contra 403)
+        const availUrl = `https://archive.org/wayback/available?url=${encodeURIComponent(url)}`;
+        const availRes = await fetch(availUrl, { signal: AbortSignal.timeout(10000) });
+        if (availRes.ok) {
+          const avail = (await availRes.json()) as {
+            archived_snapshots?: { closest?: { url?: string } };
+          };
+          const snapshotUrl = avail.archived_snapshots?.closest?.url;
+          if (!snapshotUrl) break; // sem snapshot
+          target = snapshotUrl;
+          hdrs = { ...hdrs, 'User-Agent': 'Mozilla/5.0 (compatible; research)' };
+        } else {
+          break;
+        }
+      }
+
+      const res = await fetch(target, {
+        headers: hdrs,
+        signal: AbortSignal.timeout(15000),
+        redirect: 'follow',
+      });
+
+      // 403/429/5xx → tenta de novo (com delay maior) ou fallback
+      if (res.status === 403 || res.status === 429 || res.status >= 500) {
+        process.stderr.write(`[scrape] ${attempts[i].label} HTTP ${res.status} — tentando alternativa\n`);
+        await randomDelay(700, 1400);
+        continue;
+      }
+      if (!res.ok) {
+        throw new Error(`HTTP ${res.status}`);
+      }
+
+      const html = (await res.text()).slice(0, 2 * 1024 * 1024);
+      if (!html || html.length < 200) {
+        process.stderr.write(`[scrape] ${attempts[i].label} HTML vazio — tentando alternativa\n`);
+        continue;
+      }
+      return html;
+    } catch (err) {
+      process.stderr.write(`[scrape] ${attempts[i].label} erro: ${(err as Error).message}\n`);
+      await randomDelay(500, 1000);
+    }
+  }
+  throw new Error('Não foi possível obter a página (todas as tentativas falharam)');
+}
+
 /** Valida se a URL é http(s) e parece de produto/loja (sem travas locais). */
 export function isSafeUrl(url: string): boolean {
   try {
@@ -197,18 +298,9 @@ async function scrapeProductUrlUncached(url: string): Promise<ScrapedProduct> {
   }
 
   try {
-    const res = await fetch(url, {
-      headers: { 'User-Agent': UA, Accept: 'text/html,application/xhtml+xml' },
-      signal: AbortSignal.timeout(12000),
-      redirect: 'follow',
-    });
-    if (!res.ok) {
-      return { ...base, error: `HTTP ${res.status}` };
-    }
-    const html = (await res.text()).slice(0, 2 * 1024 * 1024);
-    if (!html || html.length < 200) {
-      return { ...base, error: 'HTML vazio ou muito curto (possível JS-only)' };
-    }
+    // 1. tentativa com headers de browser + delay aleatório
+    await randomDelay();
+    const html = await fetchWithRetry(url);
 
     const mTitle = /<title>(.*?)<\/title>/i.exec(html);
     const mDesc = /<meta[^>]+name=["']description["'][^>]+content=["'](.*?)["']/i.exec(html);
