@@ -127,6 +127,11 @@ function cleanBrand(brand: string | null | undefined): string {
   return toTitleCase(b);
 }
 
+/** Remove emojis e símbolos decorativos (emojis em campos de produto trunca payload e reduz conversão). */
+function stripEmojis(text: string): string {
+  return text.replace(/[\u{1F000}-\u{1FAFF}\u{2600}-\u{27BF}\u{2190}-\u{21FF}\u{2B00}-\u{2BFF}\u{FE0F}]/gu, '').replace(/\s{2,}/g, ' ').replace(/^[ .]+|[ .]+$/g, '').trim();
+}
+
 export async function enrichProduct(
   product: RawProduct,
   options?: EnrichOptions
@@ -159,7 +164,7 @@ export async function enrichProduct(
       brand: product.brand,
       description: product.description,
       locale,
-      task: 'Gere um anúncio otimizado para LOJA PRÓPRIA (não marketplace). Retorne: bullets (3-5, beneficiamentos com emoji), description_html (parágrafos <p> mobile-first), meta_title (max 60 chars), meta_description (max 160 chars), seo_keywords (5-8).',
+      task: 'Gere um anúncio otimizado para LOJA PRÓPRIA (não marketplace). Retorne: bullets (3-5, beneficiamentos SEM emojis/símbolos decorativos, texto puro), description_html (parágrafos <p> mobile-first, sem emojis), meta_title (max 60 chars), meta_description (max 160 chars), seo_keywords (5-8). PROIBIDO usar emojis ou caracteres decorativos (emoji em título/bullets trunca e reduz conversão).',
     });
 
     const ai = await generate(prompt, { system: sys, temperature: 0.5, maxTokens: 3000 });
@@ -199,6 +204,13 @@ export async function enrichProduct(
   if (!metaTitle) metaTitle = `${title} — Compre Online`;
   if (!metaDescription) metaDescription = `${title}. ${bullets[0] ?? ''}`.slice(0, 160);
   if (seo.length === 0) seo = seoKeywords(cleanTitle);
+
+  // SANITIZA EMOJIS (praticas 2026: emoji em titulo/bullets trunca e reduz conversao)
+  bullets = bullets.map(stripEmojis);
+  descriptionHtml = stripEmojis(descriptionHtml);
+  if (!metaTitle.includes('—')) metaTitle = stripEmojis(metaTitle);
+  metaTitle = stripEmojis(metaTitle).slice(0, 60);
+  metaDescription = stripEmojis(metaDescription).slice(0, 160);
 
   // ── Imagem (opcional) ──────────────────────────────────────────────
   let imageUrl: string | null = null;
