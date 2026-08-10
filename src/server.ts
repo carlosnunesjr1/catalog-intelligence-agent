@@ -18,6 +18,7 @@ import { validateListing } from './services/validate/listing.js';
 import { enrichBatch } from './pipeline/batch.js';
 import { scrapeProductUrl } from './services/scrape/product.js';
 import { analyzeImageUrl } from './services/images/analyze.js';
+import { downloadImages } from './services/images/download.js';
 import { checkInjection, sanitizeAiOutput } from './utils/guardrails.js';
 
 export function makeServer(): McpServer {
@@ -231,6 +232,61 @@ export function makeServer(): McpServer {
       } catch (err) {
         return {
           content: [{ type: 'text', text: `Erro ao analisar imagem: ${(err as Error).message}` }],
+          isError: true,
+        };
+      }
+    }
+  );
+
+  // ── Tool 8: fetch_product_images ──────────────────────────────────
+  server.tool(
+    'fetch_product_images',
+    'Baixa as imagens de um produto para EXIBIÇÃO no chat. Aceita: (a) URL da página ' +
+      '(raspa e baixa todas as imagens do produto), ou (b) lista direta de URLs. ' +
+      'Retorna data-URLs (renderizáveis no markdown) + caminhos locais.',
+    {
+      product_url: z.string().url().optional().describe('URL da página do produto (raspa as imagens)'),
+      image_urls: z.array(z.string()).optional().describe('Lista direta de URLs de imagem'),
+      limit: z.number().int().min(1).max(10).default(6).describe('Máx de imagens (default 6)'),
+    },
+    async ({ product_url, image_urls, limit }) => {
+      try {
+        let urls: string[] = image_urls ?? [];
+        if (product_url) {
+          const scraped = await scrapeProductUrl(product_url);
+          if (!scraped.found) {
+            return {
+              content: [{ type: 'text', text: JSON.stringify({ error: scraped.error || 'Não foi possível raspar a página' }) }],
+              isError: true,
+            };
+          }
+          urls = scraped.image_urls.length ? scraped.image_urls : (scraped.image_url ? [scraped.image_url] : []);
+        }
+        if (!urls.length) {
+          return {
+            content: [{ type: 'text', text: JSON.stringify({ images: [], message: 'Nenhuma imagem encontrada' }) }],
+          };
+        }
+        const images = await downloadImages(urls, limit ?? 6);
+        // monta markdown renderizável para o chat (data-URLs)
+        const gallery = images
+          .filter((i) => i.data_url)
+          .map((i) => `![produto-${i.index}](${i.data_url})`)
+          .join('\n\n');
+        const summary = images.map((i) => ({
+          index: i.index,
+          url: i.url,
+          bytes: i.bytes,
+          local_path: i.local_path,
+          error: i.error,
+        }));
+        const text = gallery
+          ? `**${images.filter((i) => i.data_url).length} imagens baixadas:**\n\n${gallery}\n\n\`\`\`json\n${JSON.stringify(summary, null, 2)}\n\`\`\``
+          : JSON.stringify({ images: summary, message: 'Nenhuma imagem baixada' }, null, 2);
+        return { content: [{ type: 'text', text }] };
+      } catch (err) {
+        return {
+          content: [{ type: 'text', text: `Erro ao baixar imagens: ${(err as Error).message}` }],
           isError: true,
         };
       }

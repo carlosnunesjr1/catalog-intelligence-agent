@@ -63,6 +63,8 @@ export interface EnrichedProduct {
   image_processed?: boolean;
   /** análise determinística da imagem (resolução, fundo, nitidez) */
   image_analysis?: Record<string, unknown> | null;
+  /** SEO da imagem: alt_text, filename, caption, keywords */
+  image_seo?: Record<string, unknown> | null;
 }
 
 /** Resultado da validação de completeza p/ loja própria */

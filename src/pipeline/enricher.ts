@@ -10,6 +10,7 @@ import { generate } from '../services/ai/client.js';
 import { searchImages } from '../services/images/search.js';
 import { DEFAULT_LOCALE } from '../types.js';
 import { sanitizeAiOutput } from '../utils/guardrails.js';
+import { generateImageSeo } from '../services/images/seo.js';
 
 /** Palavras que ficam minúsculas em Title Case (pt-BR) */
 const SMALL_WORDS = new Set(['de', 'da', 'do', 'das', 'dos', 'e', 'com', 'para', 'em']);
@@ -229,6 +230,20 @@ export async function enrichProduct(
     brand,
   };
 
+  // SEO da imagem: alt text, filename, caption, keywords (se houver imagem)
+  let imageSeo: Record<string, unknown> | null = null;
+  if (imageUrl || imageAnalysis) {
+    try {
+      imageSeo = generateImageSeo({
+        title,
+        brand: brand === 'Marca' ? undefined : brand,
+        image_analysis: imageAnalysis,
+      }) as unknown as Record<string, unknown>;
+    } catch {
+      /* SEO de imagem é enriquecimento, nunca bloqueio */
+    }
+  }
+
   return {
     ean,
     title,
@@ -246,5 +261,6 @@ export async function enrichProduct(
     warnings,
     image_processed: imageProcessed,
     image_analysis: imageAnalysis,
+    image_seo: imageSeo,
   };
 }

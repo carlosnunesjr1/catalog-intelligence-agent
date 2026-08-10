@@ -13,6 +13,38 @@ import json
 import sys
 from io import BytesIO
 
+def extract_metadata(img):
+    """Extrai EXIF/IPTC relevantes para SEO: descrição, autor, copyright, data, orientação."""
+    meta = {"has_exif": False, "description": None, "author": None, "copyright": None,
+            "datetime": None, "orientation": None, "software": None, "camera": None}
+    try:
+        exif = img.getexif()
+        if exif:
+            meta["has_exif"] = True
+            # tags comuns EXIF
+            tag_map = {
+                270: "description",
+                271: "camera",
+                272: "software",
+                274: "orientation",
+                305: "software",
+                315: "author",
+                306: "datetime",
+                33432: "copyright",
+            }
+            for tag, key in tag_map.items():
+                val = exif.get(tag)
+                if val not in (None, "", 0):
+                    meta[key] = str(val).strip()[:200]
+    except Exception:
+        pass
+    try:
+        iptc = img.getexif().get_ifd(0x83BB) if hasattr(img, "getexif") else None
+    except Exception:
+        iptc = None
+    return meta
+
+
 def main() -> None:
     data = sys.stdin.buffer.read()
     if not data:
@@ -54,6 +86,7 @@ def main() -> None:
             "border_stddev": border_std,
             "mean_rgb": means_now,
             "sharpness": sharpness,
+            "metadata": extract_metadata(img),
         }
         # Heurísticas de prontidão
         issues = []
