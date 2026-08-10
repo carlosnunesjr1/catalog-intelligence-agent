@@ -70,9 +70,9 @@ export function makeServer(): McpServer {
       title: z.string().optional().describe('Título do produto (reservado)'),
       limit: z.number().int().min(1).max(10).default(3).describe('Quantidade máxima de imagens'),
     },
-    async ({ ean, limit }) => {
+    async ({ ean, title, limit }) => {
       try {
-        const images = await searchImages({ ean, limit: limit ?? 3 });
+        const images = await searchImages({ ean, title, limit: limit ?? 3 });
         return { content: [{ type: 'text', text: JSON.stringify({ images }, null, 2) }] };
       } catch (err) {
         return {
