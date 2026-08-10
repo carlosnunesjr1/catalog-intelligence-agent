@@ -46,6 +46,22 @@ const ALLOWED_AI_FIELDS = new Set([
   'seo_keywords',
 ]);
 
+/** Padrões de vazamento técnico que nunca devem aparecer em copy comercial. */
+const TECHNICAL_LEAKS = [
+  /\bRGB\s*[:(]\s*[0-9.,\s]*\)?/gi,
+  /\b(?:mean|border)_?rgb\b[^;.!?]*/gi,
+  /\b\d{2,3}(?:\.\d+)?\s*,\s*\d{2,3}(?:\.\d+)?\s*,\s*\d{2,3}(?:\.\d+)?\b/g,
+  /\b\d{2,4}\s*x\s*\d{2,4}\s*pixels?\b/gi,
+  /\b(?:sharpness|border_stddev|aspect_ratio|stddev)\b[^;.!?]*/gi,
+];
+
+/** Remove vazamentos técnicos de texto destinado a humanos. */
+export function stripTechnicalLeaks(text: string): string {
+  let out = text;
+  for (const re of TECHNICAL_LEAKS) out = out.replace(re, '');
+  return out.replace(/\s{2,}/g, ' ').replace(/[.,;]\s*[.,;]/g, ';').trim();
+}
+
 /**
  * Filtra o objeto retornado pela IA para SOMENTE os campos do contrato.
  * Remove chaves desconhecidas, nulls e strings excessivamente longas,

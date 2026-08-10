@@ -24,6 +24,12 @@ export interface ImageAnalysis {
   ready_for_store?: boolean;
   issues: string[];
   error?: string;
+  /**
+   * Resumo COMERCIAL para o agente usar na resposta ao lojista.
+   * SEMPRE usar este campo em texto destinado a humanos — nunca os campos técnicos
+   * (mean_rgb, border_stddev, sharpness, width/height) que são diagnóstico interno.
+   */
+  human_summary?: string;
 }
 
 const VENV_PYTHON = path.join(process.cwd(), '.venv-rembg', 'bin', 'python');
@@ -52,7 +58,22 @@ function runHelper(input: Buffer): Promise<ImageAnalysis> {
         if (code === 0 && out.length > 0) {
           try {
             const parsed = JSON.parse(Buffer.concat(out).toString()) as ImageAnalysis;
-            resolve({ ...parsed, issues: parsed.issues ?? [] });
+                    const result: ImageAnalysis = { ...parsed, issues: parsed.issues ?? [] };
+                    // Gera resumo COMERCIAL automático (nunca expor números técnicos ao lojista)
+                    if (!result.error) {
+                      const parts: string[] = [];
+                      if (result.ready_for_store === true) {
+                        parts.push('Foto do produto em boas condições para a loja.');
+                      } else {
+                        parts.push('A foto do produto precisa de ajustes antes de publicar:');
+                        for (const issue of result.issues ?? []) parts.push(`• ${issue}`);
+                      }
+                      if (result.background === 'noisy') {
+                        parts.push('Recomendação: aplicar fundo branco para padrão de catálogo.');
+                      }
+                      result.human_summary = parts.join(' ');
+                    }
+                    resolve(result);
           } catch {
             resolve({ issues: [], error: 'resposta inválida do helper' });
           }

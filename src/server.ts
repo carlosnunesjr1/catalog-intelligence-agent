@@ -221,8 +221,11 @@ export function makeServer(): McpServer {
   // ── Tool 7: analyze_image ─────────────────────────────────────────
   server.tool(
     'analyze_image',
-    'Analisa a imagem de um produto (por URL): resolução, proporção, fundo (uniforme/ruidoso), ' +
-      'nitidez e prontidão para a loja. Sugere rembg (fundo branco) quando o fundo não é uniforme.',
+    'Analisa a imagem de um produto (por URL): resolução, proporção, fundo, nitidez e ' +
+      'prontidão para a loja. IMPORTANTE: use o campo `human_summary` na resposta ao lojista — ' +
+      'os demais campos (width, height, mean_rgb, border_stddev, sharpness, aspect_ratio) são ' +
+      'DIAGNÓSTICO INTERNO e NUNCA devem ser descritos a humanos. Nunca cite valores RGB, pixels ' +
+      'ou desvio-padrão em texto destinado ao cliente.',
     {
       image_url: z.string().describe('URL da imagem do produto (http/https)'),
     },

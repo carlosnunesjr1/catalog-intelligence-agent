@@ -9,7 +9,7 @@ import type { EnrichedProduct, EnrichOptions, RawProduct } from '../types.js';
 import { generate } from '../services/ai/client.js';
 import { searchImages } from '../services/images/search.js';
 import { DEFAULT_LOCALE } from '../types.js';
-import { sanitizeAiOutput } from '../utils/guardrails.js';
+import { sanitizeAiOutput, stripTechnicalLeaks } from '../utils/guardrails.js';
 import { generateImageSeo } from '../services/images/seo.js';
 
 /** Palavras que ficam minúsculas em Title Case (pt-BR) */
@@ -205,12 +205,11 @@ export async function enrichProduct(
   if (!metaDescription) metaDescription = `${title}. ${bullets[0] ?? ''}`.slice(0, 160);
   if (seo.length === 0) seo = seoKeywords(cleanTitle);
 
-  // SANITIZA EMOJIS (praticas 2026: emoji em titulo/bullets trunca e reduz conversao)
-  bullets = bullets.map(stripEmojis);
-  descriptionHtml = stripEmojis(descriptionHtml);
-  if (!metaTitle.includes('—')) metaTitle = stripEmojis(metaTitle);
-  metaTitle = stripEmojis(metaTitle).slice(0, 60);
-  metaDescription = stripEmojis(metaDescription).slice(0, 160);
+  // SANITIZA EMOJIS + VAZAMENTO TÉCNICO (práticas 2026: copy comercial p/ humanos)
+  bullets = bullets.map(stripEmojis).map(stripTechnicalLeaks);
+  descriptionHtml = stripTechnicalLeaks(stripEmojis(descriptionHtml));
+  metaTitle = stripTechnicalLeaks(stripEmojis(metaTitle)).slice(0, 60);
+  metaDescription = stripTechnicalLeaks(stripEmojis(metaDescription)).slice(0, 160);
 
   // ── Imagem (opcional) ──────────────────────────────────────────────
   let imageUrl: string | null = null;
