@@ -72,7 +72,7 @@ try {
   // 2. tools/list — 7 ferramentas
   const tools = await rpc('tools/list');
   const names = (tools.tools ?? []).map((t) => t.name);
-  const expected = ['lookup_ean', 'search_images', 'enrich_product', 'validate_listing', 'enrich_batch', 'analyze_url', 'analyze_image', 'fetch_product_images'];
+  const expected = ['lookup_ean', 'search_images', 'enrich_product', 'validate_listing', 'enrich_batch', 'analyze_url', 'analyze_image', 'fetch_product_images', 'prepare_shopify_payload'];
   check('tools/list 7 tools', expected.every((n) => names.includes(n)),
     `${names.length} tools: ${names.join(', ')}`);
 

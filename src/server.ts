@@ -293,6 +293,83 @@ export function makeServer(): McpServer {
     }
   );
 
+  // ── Tool 9: prepare_shopify_payload ───────────────────────────────
+  server.tool(
+    'prepare_shopify_payload',
+    'Converte um produto enriquecido (saída de enrich_product) no payload pronto da Shopify ' +
+      'Admin GraphQL (productCreate) para PUBLICAÇÃO AUTOMÁTICA na loja, sem copiar/colar. ' +
+      'Retorna a query GraphQL e o payload JSON com title, descriptionHtml, handle, vendor, ' +
+      'tags (SEO), metafields (gtin, meta_title, meta_description) e imagem.',
+    {
+      product: z
+        .object({
+          title: z.string().optional(),
+          description_html: z.string().optional(),
+          seo_keywords: z.array(z.string()).optional(),
+          brand: z.string().optional(),
+          ean: z.string().optional().nullable(),
+          image_url: z.string().optional().nullable(),
+          meta_title: z.string().optional(),
+          meta_description: z.string().optional(),
+          bullets: z.array(z.string()).optional(),
+          attributes: z.record(z.string(), z.unknown()).optional(),
+        })
+        .partial(),
+      handle: z.string().optional().describe('Slug da URL (opcional; gerado do título se ausente)'),
+    },
+    async ({ product, handle }) => {
+      try {
+        const title = product.title?.trim() || 'Produto sem título';
+        const slug = (handle || title).toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '').slice(0, 80);
+        const bullets = product.bullets ?? [];
+        const descriptionHtml = product.description_html || `<p>${title}</p>${bullets.map((b) => `<li>${b}</li>`).join('')}`;
+        const tags = (product.seo_keywords ?? []).slice(0, 6);
+        const vendor = product.brand || 'Marca';
+
+        const metafields = [];
+        if (product.ean) metafields.push({ key: 'gtin', value: product.ean, type: 'single_line_text_field', namespace: 'custom' });
+        if (product.meta_title) metafields.push({ key: 'meta_title', value: product.meta_title, type: 'single_line_text_field', namespace: 'custom' });
+        if (product.meta_description) metafields.push({ key: 'meta_description', value: product.meta_description, type: 'multi_line_text_field', namespace: 'custom' });
+
+        const shopify_payload = {
+          input: {
+            title,
+            descriptionHtml,
+            handle: slug,
+            vendor,
+            tags,
+            productType: '',
+            ...(product.image_url ? { media: [{ mediaContentType: 'IMAGE', originalSource: product.image_url }] } : {}),
+            metafields,
+            redirectNewUrls: true,
+          },
+          media: product.image_url ? [{ originalSource: product.image_url, mediaContentType: 'IMAGE' }] : [],
+        };
+
+        const result = {
+          shopify_mutation_name: 'productCreate',
+          shopify_query:
+            'mutation productCreate($input: ProductInput!, $media: [CreateMediaInput!]) { productCreate(input: $input, media: $media) { product { id title handle vendor } userErrors { field message } } }',
+          shopify_payload,
+          summary: {
+            title,
+            handle: slug,
+            vendor,
+            tags,
+            gtin: product.ean ?? null,
+            image: product.image_url ?? null,
+          },
+        };
+        return { content: [{ type: 'text', text: JSON.stringify(result, null, 2) }] };
+      } catch (err) {
+        return {
+          content: [{ type: 'text', text: `Erro ao preparar payload Shopify: ${(err as Error).message}` }],
+          isError: true,
+        };
+      }
+    }
+  );
+
   return server;
 }
 

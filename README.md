@@ -17,10 +17,14 @@ Não é integrador de marketplace: foca no motor central de higienização que q
 | Tool | O que faz |
 |---|---|
 | `lookup_ean` | Dados de referência por EAN/GTIN (valida dígito verificador + cascade: Bluesoft Cosmos BR → Open Food Facts → EAN-Search) |
-| `search_images` | URLs de imagem candidatas por EAN ou título |
-| `enrich_product` | Pipeline completo: higieniza título → bullets → descrição HTML → SEO → schema.org JSON-LD → imagem → atributos |
-| `validate_listing` | Score 0–100 de completeza p/ loja própria (SEO on-page, dados, schema.org, imagem) + issues |
+| `search_images` | URLs de imagem candidatas por EAN **ou título** (marca própria sem EAN → Unsplash/Pexels) |
+| `enrich_product` | Pipeline completo: higieniza título → bullets → descrição HTML → SEO → schema.org JSON-LD → imagem (rembg fundo branco) → análise visual → SEO da imagem (alt/filename/caption) |
+| `validate_listing` | Score 0–100 de completeza p/ loja própria (SEO on-page, dados, schema.org, imagem, **regras de moda**: grade/composição/cor/medidas) + issues |
 | `enrich_batch` | Orquestra lote de até 50 produtos → relatório consolidado |
+| `analyze_url` | Raspa e diagnostica a página de um produto na loja do cliente (título, preço, marca, SKU, imagens, EAN) |
+| `analyze_image` | Analisa a imagem: resolução, proporção, fundo, nitidez, **metadados EXIF** + prontidão p/ loja |
+| `fetch_product_images` | Baixa até 10 imagens e exibe **galeria no chat** (data-URLs) ou retorna caminhos locais |
+| `prepare_shopify_payload` | Converte o produto enriquecido no **payload GraphQL productCreate** (publicação automática na loja, sem copiar/colar) |
 
 ## Impacto financeiro (pitch)
 

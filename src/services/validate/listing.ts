@@ -92,6 +92,35 @@ export function validateListing(
     score -= 5;
   }
 
+  // ── Regras de MODA (vestuário) ─────────────────────────────────────
+  if (isFashion(listing)) {
+    const attrs = (listing.attributes ?? {}) as Record<string, unknown>;
+    // Grade de tamanhos
+    const hasSize = attrs['tamanhos'] || attrs['size_guide'] || attrs['grade'] || listing.size_guide;
+    if (!hasSize) {
+      issues.push({ field: 'size_guide', severity: 'warning', message: 'Grade de tamanhos ausente — essencial p/ moda (P/M/G ou numérica)' });
+      score -= 5;
+    }
+    // Composição/tecido
+    const hasFabric = attrs['composicao'] || attrs['tecido'] || attrs['material'] || listing.composicao;
+    if (!hasFabric) {
+      issues.push({ field: 'composicao', severity: 'warning', message: 'Composição/tecido ausente — obrigatório p/ moda (ex.: 60% algodão, 40% poliéster)' });
+      score -= 5;
+    }
+    // Cor
+    const hasColor = attrs['cor'] || attrs['color'] || listing.cor;
+    if (!hasColor) {
+      issues.push({ field: 'cor', severity: 'warning', message: 'Cor não informada — ajuda filtros da loja' });
+      score -= 5;
+    }
+    // Guia de medidas
+    const hasGuide = attrs['guia_medidas'] || attrs['measurements'] || listing.medidas;
+    if (!hasGuide) {
+      issues.push({ field: 'medidas', severity: 'warning', message: 'Guia de medidas ausente — reduz trocas/devoluções em vestuário' });
+      score -= 5;
+    }
+  }
+
   score = Math.max(0, Math.min(100, score));
 
   return {
@@ -99,6 +128,20 @@ export function validateListing(
     issues,
     ready: score >= 70,
   };
+}
+
+/** Detecta segmento moda/vestuário por campos, attributes ou categoria. */
+export function isFashion(listing: Record<string, unknown>): boolean {
+  const attrs = (listing.attributes ?? {}) as Record<string, unknown>;
+  const category = String(listing.category ?? listing.categoria ?? attrs['categoria'] ?? '').toLowerCase();
+  const title = String(listing.title ?? '').toLowerCase();
+  const hay = `${category} ${title} ${Object.keys(attrs).join(' ')} ${Object.values(attrs).join(' ')}`.toLowerCase();
+  const FASHION_TERMS = [
+    'moda', 'roupa', 'vestuário', 'fashion', 'terno', 'blusa', 'calça', 'calca', 'vestido',
+    'camisa', 'camiseta', 'moletom', 'jaqueta', 'saia', 'short', 'bermuda', 'casaco',
+    'tamanho', 'tamanhos', 'composicao', 'tecido', 'size_guide', 'cor',
+  ];
+  return FASHION_TERMS.some((t) => hay.includes(t));
 }
 
 export type { ValidateRules };
