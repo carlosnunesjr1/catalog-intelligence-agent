@@ -7,6 +7,7 @@
  */
 
 import { isValidEan } from '../lookup/ean.js';
+import { extractGalleryWithBrowser } from './browser_gallery.js';
 import { promises as fs } from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
@@ -318,6 +319,17 @@ async function scrapeProductUrlUncached(url: string): Promise<ScrapedProduct> {
     const gallery = html.match(/https?:\/\/[^"'\s]+\.(?:png|jpe?g|webp)(?:\?[^"'\s]*)?/gi) || [];
     for (const img of gallery) {
       if (!allImages.includes(img) && allImages.length < 6) allImages.push(img);
+    }
+
+    // Galeria JS (lojas Magazord etc.): HTML estático tem só og:image, mas o
+    // browser renderiza 10+ imagens (fotos + tabela de medidas). Quando temos
+    // poucas imagens DE PRODUTO (não favicon/ícones), tenta completar via browser.
+    const productImgCount = allImages.filter((u) => /\/produto\/|\/product\//i.test(u)).length;
+    if (productImgCount < 3) {
+      const browserImages = await extractGalleryWithBrowser(url);
+      for (const img of browserImages) {
+        if (!allImages.includes(img) && allImages.length < 12) allImages.push(img);
+      }
     }
 
     // Descrição: prefere meta; senão trecho de texto da página (limpo)
