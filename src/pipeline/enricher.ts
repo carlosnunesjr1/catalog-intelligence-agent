@@ -15,6 +15,95 @@ import { generateImageSeo } from '../services/images/seo.js';
 /** Palavras que ficam minúsculas em Title Case (pt-BR) */
 const SMALL_WORDS = new Set(['de', 'da', 'do', 'das', 'dos', 'e', 'com', 'para', 'em']);
 
+/**
+ * Repara JSON truncado (modelos free cortam no meio quando max_tokens estoura).
+ * Estratégia: caminha o texto fechando strings não-terminadas e colchetes/chaves
+ * abertos, até obter um JSON parseável. Retorna string reparada ou null.
+ */
+export function repairTruncatedJson(text: string): string | null {
+  const t = text.trim();
+  if (!t) return null;
+
+  // Se já é parseável, devolve direto
+  try {
+    JSON.parse(t);
+    return t;
+  } catch {
+    /* segue */
+  }
+
+  // Encontra o primeiro '{' e usa tudo a partir dele
+  const start = t.indexOf('{');
+  if (start === -1) return null;
+  let s = t.slice(start);
+
+  // Remove texto após o último '}' (lixo pós-JSON, ex.: explicações)
+  const lastClose = s.lastIndexOf('}');
+  if (lastClose !== -1) s = s.slice(0, lastClose + 1);
+
+  // Fecha strings e estruturas pendentes, caractere a caractere
+  const out: string[] = [];
+  const stack: string[] = [];
+  let inString = false;
+  let escaped = false;
+  let repaired = false;
+
+  for (let i = 0; i < s.length; i++) {
+    const ch = s[i];
+    if (inString) {
+      out.push(ch);
+      if (escaped) {
+        escaped = false;
+      } else if (ch === '\\') {
+        escaped = true;
+      } else if (ch === '"') {
+        inString = false;
+      }
+      continue;
+    }
+    if (ch === '"') {
+      inString = true;
+      out.push(ch);
+      continue;
+    }
+    if (ch === '{' || ch === '[') {
+      stack.push(ch === '{' ? '}' : ']');
+      out.push(ch);
+      continue;
+    }
+    if (ch === '}' || ch === ']') {
+      if (stack.length && stack[stack.length - 1] === ch) {
+        stack.pop();
+      } else {
+        repaired = true; // fecha extra — ignora
+        continue;
+      }
+      out.push(ch);
+      continue;
+    }
+    out.push(ch);
+  }
+
+  // Fecha string pendente
+  if (inString) {
+    out.push('"');
+    repaired = true;
+  }
+  // Fecha estruturas pendentes (na ordem inversa)
+  while (stack.length) {
+    out.push(stack.pop()!);
+    repaired = true;
+  }
+
+  const candidate = out.join('');
+  try {
+    JSON.parse(candidate);
+    return repaired ? candidate : null;
+  } catch {
+    return null;
+  }
+}
+
 /** Expande abreviações comuns do catálogo bruto. */
 const ABBREVIATIONS: Record<string, string> = {
   'cf/': 'com',
@@ -91,20 +180,43 @@ function buildSchemaOrg(p: {
   return schema;
 }
 
-/** Bullets determinísticos de fallback (sem IA). */
+/** Bullets determinísticos de fallback (sem IA) — extrai características reais do título. */
 function fallbackBullets(title: string, brand: string): string[] {
-  return [
-    `${toTitleCase(title)} — produto de qualidade com garantia do fabricante.`,
-    brand && brand.toLowerCase() !== 'sem marca'
-      ? `Marca ${toTitleCase(brand)}: confiança e procedência.`
-      : 'Produto novo, original e com procedência garantida.',
-    'Ideal para uso doméstico e profissional.',
-  ];
+  const t = toTitleCase(title);
+  // extrai características do título: cor, material, modelo (palavras-chave reais)
+  const words = title
+    .toLowerCase()
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .split(/[^a-z0-9]+/)
+    .filter((w) => w.length > 3 && !SMALL_WORDS.has(w) && !['produto', 'com', 'para', 'novo', 'original', 'premium', 'masculino', 'feminino', 'unissex'].includes(w));
+  const feats = [...new Set(words)].slice(0, 3);
+  const featsList = feats.length
+    ? feats.map((f) => `Acabamento e material em destaque: ${f}.`).join(' ')
+    : '';
+  const brandText =
+    brand && brand.toLowerCase() !== 'sem marca' && brand.toLowerCase() !== 'marca'
+      ? toTitleCase(brand)
+      : '';
+
+  const bullets: string[] = [];
+  if (feats.length) {
+    bullets.push(`Material e acabamento cuidadosamente selecionados (${feats.join(', ')}).`);
+  }
+  if (brandText) {
+    bullets.push(`Marca ${brandText} — produto original com procedência garantida.`);
+  } else {
+    bullets.push('Produto novo, original e com procedência garantida.');
+  }
+  bullets.push('Conforto e durabilidade para o uso no dia a dia.');
+  bullets.push('Design versátil, combina com diferentes ocasiões e estilos.');
+  if (featsList) bullets.push(featsList);
+  return bullets.slice(0, 5);
 }
 
 function fallbackDescription(title: string, bullets: string[]): string {
   const items = bullets.map((b) => `<li>${b}</li>`).join('');
-  return `<p>${toTitleCase(title)} — a escolha certa para quem busca qualidade e performance.</p><ul>${items}</ul>`;
+  return `<p>${toTitleCase(title)} — qualidade, durabilidade e acabamento pensados para o seu dia a dia.</p><ul>${items}</ul>`;
 }
 
 /** Extrai keywords determinísticas do título (5-8 palavras-chave). */
@@ -169,9 +281,9 @@ export async function enrichProduct(
 
     const ai = await generate(prompt, { system: sys, temperature: 0.5, maxTokens: 3000 });
     if (ai) {
+      let jsonText = ai.trim();
       try {
         // Extrai JSON de resposta com fences markdown ```json ... ``` (modelos free o fazem)
-        let jsonText = ai.trim();
         const fence = jsonText.match(/```(?:json)?\s*([\s\S]*?)```/);
         if (fence) jsonText = fence[1].trim();
         // fallback: pega o primeiro {...} balanceado
@@ -188,8 +300,25 @@ export async function enrichProduct(
         if (typeof clean.meta_description === 'string') metaDescription = clean.meta_description.slice(0, 160);
         if (Array.isArray(clean.seo_keywords)) seo = clean.seo_keywords.slice(0, 8);
       } catch (err) {
-        warnings.push('IA retornou JSON inválido — fallback determinístico');
-        process.stderr.write(`[enricher] JSON parse falhou: ${(err as Error).message}\n`);
+        // Reparador de JSON truncado: modelos free às vezes cortam o JSON no meio
+        // (max_tokens estourou). Tenta fechar strings/colchetes até o parse passar.
+        try {
+          const repaired = repairTruncatedJson(jsonText);
+          if (repaired) {
+            const clean = sanitizeAiOutput(JSON.parse(repaired));
+            if (Array.isArray(clean.bullets)) bullets = clean.bullets.slice(0, 5);
+            if (typeof clean.description_html === 'string') descriptionHtml = clean.description_html;
+            if (typeof clean.meta_title === 'string') metaTitle = clean.meta_title.slice(0, 60);
+            if (typeof clean.meta_description === 'string') metaDescription = clean.meta_description.slice(0, 160);
+            if (Array.isArray(clean.seo_keywords)) seo = clean.seo_keywords.slice(0, 8);
+            process.stderr.write(`[enricher] JSON reparado (truncado) — IA aproveitada\n`);
+          } else {
+            throw err;
+          }
+        } catch (err2) {
+          warnings.push('IA retornou JSON inválido — fallback determinístico');
+          process.stderr.write(`[enricher] JSON parse falhou: ${(err as Error).message}\n`);
+        }
       }
     } else {
       warnings.push('IA indisponível (sem AI_API_KEY) — modo determinístico');
