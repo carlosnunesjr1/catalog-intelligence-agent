@@ -1,0 +1,15 @@
+Bem-vindo ao Catalog Intelligence Agent — um agente de e-commerce para o Deco Studio que enriquece catálogos automaticamente.
+
+Na tela inicial do Deco Studio, vemos o painel de controle onde criamos e gerenciamos lojas.
+
+Aqui nas Conexões, nossa MCP Catalog Enricher está plugada — dez ferramentas reais: busca por EAN, imagens, enriquecimento de produto, validação de listagem e mais.
+
+No chat do agente, colamos a URL de uma loja real. O agente chama analyze_url e enrich_product automaticamente, sem copiar e colar nada.
+
+O resultado do enriquecimento aparece ao vivo: título otimizado, bullets de venda, descrição e schema estruturado — tudo em português.
+
+No Monitor de Auditoria, vemos a rastreabilidade de custo: cada chamada de ferramenta, token e preço registrado.
+
+E aqui um produto real antes do enriquecimento, para contraste — provando que a transformação é aplicada em dados verdadeiros, não em demonstração fictícia.
+
+O Catalog Intelligence Agent levou dez produtos em cinquenta e quatro segundos. Manualmente, seriam mais de quatro horas. Essa é a aplicação real da inteligência de catálogo.

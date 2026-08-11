@@ -3,7 +3,7 @@
 set -e
 cd /root/catalog-intelligence-agent/video-assets
 
-AUDIO=/tmp/narracao.mp3
+AUDIO=/tmp/narracao_ptbr.mp3
 SRT=legendas.srt
 OUT=/tmp/video-final.mp4
 
@@ -47,9 +47,8 @@ done
 # Concatena clips
 printf "file '%s'\n" clips/c*.mp4 > concat.txt
 
-# Junta: vídeo + áudio + legendas (queimadas)
+# Junta: vídeo (slides) + áudio (narração pt-BR), sem legendas
 ffmpeg -y -v error -f concat -safe 0 -i concat.txt -i "$AUDIO" \
-  -vf "subtitles=$SRT:force_style='FontName=DejaVu Sans,FontSize=20,PrimaryColour=&H00FFFFFF,OutlineColour=&H00101010,Outline=2,Alignment=2,MarginV=36'" \
   -c:v libx264 -preset fast -crf 21 -pix_fmt yuv420p \
   -c:a aac -b:a 128k -shortest -movflags +faststart "$OUT"
 

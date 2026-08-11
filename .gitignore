@@ -8,3 +8,7 @@ dist/
 
 .venv-rembg/
 .demo-screenshots/
+
+# Vídeos e artefatos locais (não sobem — GH001 file size)
+*.mp4
+scripts/_debug_backup/
