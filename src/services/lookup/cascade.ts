@@ -10,6 +10,7 @@
 
 import type { EanLookupResult } from '../../types.js';
 import { isValidEan } from './ean.js';
+import { webSearchEan, type WebEanCandidate } from './web.js';
 
 /** Valida dígito verificador EAN (módulo 10) — delegado a ean.ts */
 
@@ -17,7 +18,7 @@ import { isValidEan } from './ean.js';
  * Faz lookup de um EAN. Tenta Open Food Facts primeiro.
  * Retorna EanLookupResult com found=false em caso de falha.
  */
-export async function lookupEan(ean: string): Promise<EanLookupResult> {
+export async function lookupEan(ean: string, productHint?: string): Promise<EanLookupResult> {
   const clean = ean.replace(/\D/g, '');
 
   if (!isValidEan(clean)) {
@@ -75,6 +76,32 @@ export async function lookupEan(ean: string): Promise<EanLookupResult> {
   } catch (err) {
     process.stderr.write(
       `[lookup/cascade] Open Food Facts falhou: ${(err as Error).message}\n`
+    );
+  }
+
+  // 2. Fallback WEB: EAN não está nas bases gratuitas (comum em moda BR/marca
+  //    própria). Busca na web (DuckDuckGo) e devolve candidatos para o lojista
+  //    validar — NUNCA inventa dados, mostra o que a web diz.
+  try {
+    const candidates = await webSearchEan(clean, productHint);
+    if (candidates.length > 0) {
+      return {
+        ean: clean,
+        source: 'web',
+        title: null, // não inventa — candidatos têm o título real
+        brand: null,
+        description: null,
+        image_url: null,
+        ncm: null,
+        weight_g: null,
+        dimensions: null,
+        found: true, // encontrou candidatos na web para validação
+        candidates,
+      };
+    }
+  } catch (err) {
+    process.stderr.write(
+      `[lookup/cascade] busca web falhou: ${(err as Error).message}\n`
     );
   }
 

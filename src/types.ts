@@ -31,6 +31,8 @@ export interface EanLookupResult {
   weight_g?: number | null;
   dimensions?: { height_cm?: number; width_cm?: number; length_cm?: number } | null;
   found: boolean;
+  /** Candidatos da busca web (quando as bases não têm o produto) — p/ validação humana */
+  candidates?: { title: string; url: string; snippet?: string; source: string }[];
 }
 
 /** Imagem candidata retornada pelo search_images */

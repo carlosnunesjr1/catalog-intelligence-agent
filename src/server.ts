@@ -36,11 +36,21 @@ export function makeServer(): McpServer {
   // ── Tool 1: lookup_ean ────────────────────────────────────────────
   server.tool(
     'lookup_ean',
-    'Busca dados de referência de um produto pelo código EAN/GTIN em múltiplas fontes ' +
-      '(Open Food Facts, EAN-Search). Valida o dígito verificador antes da requisição. ' +
-      'Retorna título, marca, descrição, imagem e dimensões quando encontrados.',
-    { ean: z.string().describe('Código EAN/GTIN de 8, 12, 13 ou 14 dígitos') },
-    async ({ ean }) => {
+    'Busca dados de referência de um produto pelo código EAN/GTIN. Fontes: ' +
+      '(1) Open Food Facts (alimentos), (2) busca web (DuckDuckGo) quando o EAN não está nas ' +
+      'bases — comum em moda/marca própria BR. IMPORTANTE: a busca web prioriza o EAN NU (mostra ' +
+      'o que o código realmente é); product_hint é opcional e só usado como segunda query de ' +
+      'validação, NUNCA para sobrepor o resultado do EAN. Retorna candidates com título/URL reais ' +
+      'para o lojista validar — o agente NUNCA deve afirmar que um candidato É o produto sem ' +
+      'confirmação do lojista.',
+    {
+      ean: z.string().describe('Código EAN/GTIN de 8, 12, 13 ou 14 dígitos'),
+      product_hint: z
+        .string()
+        .optional()
+        .describe('Termo do produto (título/marca) — usado apenas como 2ª query de validação; NUNCA sobrepõe o EAN'),
+    },
+    async ({ ean, product_hint }) => {
       try {
         const injection = checkInjection(ean);
         if (injection.detected) {
@@ -49,7 +59,7 @@ export function makeServer(): McpServer {
             isError: true,
           };
         }
-        const result = await lookupEan(ean);
+        const result = await lookupEan(ean, product_hint);
         return { content: [{ type: 'text', text: JSON.stringify(result, null, 2) }] };
       } catch (err) {
         return {
@@ -89,6 +99,9 @@ export function makeServer(): McpServer {
     'Pipeline completo de enriquecimento: higieniza título (Title Case, remove ruído), gera ' +
       'bullets de benefícios, descrição HTML mobile-first, SEO (slug/meta/keywords), schema.org ' +
       'JSON-LD, busca imagem por EAN e normaliza atributos. Entrada = produto bruto de ERP; ' +
+      'IMPORTANTE: com with_images=false (padrão) o output NÃO embute a imagem em base64 — a image_url ' +
+      'vem como URL simples e o JSON fica leve para o agente ler. Use with_images=true somente se precisar ' +
+      'da imagem processada inline (cuidado: base64 deixa o output com 100k+ tokens). ' +
       'saída = produto pronto para a loja própria (storefront).',
     {
       product: z.object({
@@ -101,7 +114,7 @@ export function makeServer(): McpServer {
       }),
       options: z
         .object({
-          with_images: z.boolean().default(true),
+          with_images: z.boolean().default(false),
           with_ai: z.boolean().default(true),
           locale: z.string().default('pt-BR'),
         })
@@ -170,7 +183,7 @@ export function makeServer(): McpServer {
                       .max(50),
       options: z
         .object({
-          with_images: z.boolean().default(true),
+          with_images: z.boolean().default(false),
           with_ai: z.boolean().default(true),
           locale: z.string().default('pt-BR'),
         })
