@@ -74,8 +74,13 @@ export async function searchImages(options: SearchImagesOptions): Promise<ImageC
     if (query) {
       const needed = limit - results.length;
 
-      // 2a. Unsplash Source (sem key)
-      results.push({ url: unsplashSourceUrl(query), source: 'unsplash', score: 0.8 });
+      // 2a. DuckDuckGo Images via ddgs (sem key — substitui Unsplash Source deprecado)
+      const ddgImages = await ddgImagesSearch(query.replace(/\+/g, ' '), Math.max(needed, 3));
+      for (const u of ddgImages) {
+        if (results.length < limit && !results.some((r) => r.url === u)) {
+          results.push({ url: u, source: 'web', score: 0.8 });
+        }
+      }
 
       // 2b. Pexels (se key configurada)
       if (results.length < limit) {
@@ -90,6 +95,42 @@ export async function searchImages(options: SearchImagesOptions): Promise<ImageC
   }
 
   return results.slice(0, limit);
+}
+
+/** Busca imagens via DuckDuckGo Images (pacote ddgs, sem key) — substituto do Unsplash Source. */
+async function ddgImagesSearch(query: string, limit: number): Promise<string[]> {
+  try {
+    const { execFile } = await import('node:child_process');
+    const { promisify } = await import('node:util');
+    const execFileP = promisify(execFile);
+    const script = `
+import json, sys
+try:
+    from ddgs import DDGS
+except Exception as e:
+    print(json.dumps({"error": f"import: {e}"})); sys.exit(0)
+q = sys.argv[1]
+out = []
+try:
+    with DDGS() as d:
+        for r in d.images(q, max_results=6):
+            u = r.get("image") or r.get("url") or ""
+            if u.startswith("http"): out.append(u)
+except Exception as e:
+    print(json.dumps({"error": f"search: {e}"})); sys.exit(0)
+print(json.dumps(out))
+`;
+    const { stdout } = await execFileP('python3', ['-c', script, query], {
+      timeout: 20000,
+      maxBuffer: 2 * 1024 * 1024,
+    });
+    const data = JSON.parse(stdout);
+    if (Array.isArray(data)) return data.filter((u) => /\.(png|jpe?g|webp)(\?|$)/i.test(u)).slice(0, limit);
+    return [];
+  } catch (err) {
+    process.stderr.write(`[images/search] ddgs images falhou: ${(err as Error).message}\n`);
+    return [];
+  }
 }
 
 export type { EanLookupResult };

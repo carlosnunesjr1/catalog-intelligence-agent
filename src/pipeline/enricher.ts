@@ -275,8 +275,10 @@ export async function enrichProduct(
       title: rawTitle,
       brand: product.brand,
       description: product.description,
+      price: product.price,
+      attributes: product.attributes ?? {},
       locale,
-      task: 'Gere um anúncio otimizado para LOJA PRÓPRIA (não marketplace). Retorne: bullets (3-5, beneficiamentos SEM emojis/símbolos decorativos, texto puro), description_html (parágrafos <p> mobile-first, sem emojis), meta_title (max 60 chars), meta_description (max 160 chars), seo_keywords (5-8). PROIBIDO usar emojis ou caracteres decorativos (emoji em título/bullets trunca e reduz conversão).',
+      task: 'Gere um anúncio otimizado para LOJA PRÓPRIA (não marketplace). USE os atributos/descrição fornecidos para criar conteúdo ESPECÍFICO do produto (material, cor, modelo, medidas, uso) — NUNCA frases genéricas tipo "produto de qualidade" ou "marca X: confiança". Retorne: bullets (3-5, beneficiamentos concretos e específicos SEM emojis), description_html (parágrafos <p> mobile-first, específicos, sem emojis), meta_title (max 60 chars), meta_description (max 160 chars), seo_keywords (5-8). PROIBIDO emojis e frases genéricas.',
     });
 
     const ai = await generate(prompt, { system: sys, temperature: 0.5, maxTokens: 3000 });

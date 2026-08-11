@@ -136,10 +136,15 @@ export function isFashion(listing: Record<string, unknown>): boolean {
   const category = String(listing.category ?? listing.categoria ?? attrs['categoria'] ?? '').toLowerCase();
   const title = String(listing.title ?? '').toLowerCase();
   const hay = `${category} ${title} ${Object.keys(attrs).join(' ')} ${Object.values(attrs).join(' ')}`.toLowerCase();
+  // Termos FORTES de vestuário — cor/composição sozinhos NÃO bastam (papel sulfite
+  // com 'cor branco' ou 'composição papel' seria falso positivo).
   const FASHION_TERMS = [
-    'moda', 'roupa', 'vestuário', 'fashion', 'terno', 'blusa', 'calça', 'calca', 'vestido',
-    'camisa', 'camiseta', 'moletom', 'jaqueta', 'saia', 'short', 'bermuda', 'casaco',
-    'tamanho', 'tamanhos', 'composicao', 'tecido', 'size_guide', 'cor',
+    'terno', 'blusa', 'calça', 'calca', 'vestido', 'camisa', 'camiseta', 'moletom',
+    'jaqueta', 'saia', 'short', 'bermuda', 'casaco', 'vestuário', 'vestuario',
+    'roupa', 'moda', 'fashion', 'blazer', 'smoking', 'pijama', 'cueca', 'meia',
+    'gravat', 'lenço', 'lenco', 'tamanho p', 'tamanho m', 'tamanho g', 'tamanho gg',
+    'manequim', 'poliviscose', 'algodão', 'algodao', 'malha', 'slim', 'manga longa',
+    'manga curta', 'tecido', 'size_guide', 'grade de tamanhos',
   ];
   return FASHION_TERMS.some((t) => hay.includes(t));
 }

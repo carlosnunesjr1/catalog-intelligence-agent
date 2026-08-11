@@ -32,7 +32,7 @@ const FALLBACK_KEYS = (process.env.AI_FALLBACK_KEYS || '')
   .map((k) => k.trim())
   .filter(Boolean);
 
-const TIMEOUT_MS = 30_000;
+const TIMEOUT_MS = Number(process.env.AI_TIMEOUT_MS) || 90_000;
 const COOLDOWN_429_MS = 60_000; // rate limit: pausa 60s
 const COOLDOWN_401_MS = 3_600_000; // chave inválida: pausa 1h
 

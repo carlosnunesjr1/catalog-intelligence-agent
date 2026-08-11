@@ -15,6 +15,8 @@ export interface RawProduct {
   description?: string | null;
   /** URLs de imagem brutas (podem ser ruins) */
   image_urls?: string[];
+  /** Preço de venda (string ou número) */
+  price?: string | number | null;
   /** Atributos adicionais livre */
   attributes?: Record<string, string | number | null>;
 }
